@@ -46,6 +46,17 @@ async def test_airzone_create_climates(hass: HomeAssistant) -> None:
 
     await async_init_integration(hass)
 
+    state = hass.states.get("climate.system_1")
+    assert state.state == HVACMode.HEAT
+    assert state.attributes.get(ATTR_HVAC_ACTION) == HVACAction.HEATING
+    assert state.attributes.get(ATTR_HVAC_MODES) == [
+        HVACMode.OFF,
+        HVACMode.FAN_ONLY,
+        HVACMode.COOL,
+        HVACMode.HEAT,
+        HVACMode.DRY,
+    ]
+
     state = hass.states.get("climate.despacho")
     assert state.state == HVACMode.OFF
     assert state.attributes.get(ATTR_CURRENT_HUMIDITY) == 36
@@ -244,6 +255,52 @@ async def test_airzone_climate_set_hvac_mode(hass: HomeAssistant) -> None:
         )
 
     state = hass.states.get("climate.salon")
+    assert state.state == HVACMode.OFF
+
+    HVAC_MOCK_3 = {
+        API_DATA: [
+            {
+                API_SYSTEM_ID: 1,
+                API_ZONE_ID: 1,
+                API_MODE: OperationMode.STOP.value,
+            },
+            {
+                API_SYSTEM_ID: 1,
+                API_ZONE_ID: 2,
+                API_MODE: OperationMode.STOP.value,
+            },
+            {
+                API_SYSTEM_ID: 1,
+                API_ZONE_ID: 3,
+                API_MODE: OperationMode.STOP.value,
+            },
+            {
+                API_SYSTEM_ID: 1,
+                API_ZONE_ID: 4,
+                API_MODE: OperationMode.STOP.value,
+            },
+            {
+                API_SYSTEM_ID: 1,
+                API_ZONE_ID: 5,
+                API_MODE: OperationMode.STOP.value,
+            },
+        ]
+    }
+    with patch(
+        "homeassistant.components.airzone.AirzoneLocalApi.put_hvac",
+        return_value=HVAC_MOCK_3,
+    ):
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_HVAC_MODE,
+            {
+                ATTR_ENTITY_ID: "climate.system_1",
+                ATTR_HVAC_MODE: HVACMode.OFF,
+            },
+            blocking=True,
+        )
+
+    state = hass.states.get("climate.system_1")
     assert state.state == HVACMode.OFF
 
 

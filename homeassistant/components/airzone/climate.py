@@ -18,6 +18,7 @@ from aioairzone.const import (
     AZD_MODES,
     AZD_NAME,
     AZD_ON,
+    AZD_SYSTEMS,
     AZD_TEMP,
     AZD_TEMP_MAX,
     AZD_TEMP_MIN,
@@ -34,14 +35,14 @@ from homeassistant.components.climate.const import (
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE
+from homeassistant.const import ATTR_TEMPERATURE, TEMP_CELSIUS
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import API_TEMPERATURE_STEP, DOMAIN, TEMP_UNIT_LIB_TO_HASS
 from .coordinator import AirzoneUpdateCoordinator
-from .entity import AirzoneZoneEntity
+from .entity import AirzoneSystemEntity, AirzoneZoneEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,8 +77,19 @@ async def async_setup_entry(
 ) -> None:
     """Add Airzone sensors from a config_entry."""
     coordinator = hass.data[DOMAIN][entry.entry_id]
+
     async_add_entities(
-        AirzoneClimate(
+        AirzoneSystemClimate(
+            coordinator,
+            entry,
+            system_id,
+            system_data,
+        )
+        for system_id, system_data in coordinator.data[AZD_SYSTEMS].items()
+    )
+
+    async_add_entities(
+        AirzoneZoneClimate(
             coordinator,
             entry,
             system_zone_id,
@@ -87,8 +99,69 @@ async def async_setup_entry(
     )
 
 
-class AirzoneClimate(AirzoneZoneEntity, ClimateEntity):
-    """Define an Airzone sensor."""
+class AirzoneSystemClimate(AirzoneSystemEntity, ClimateEntity):
+    """Define an Airzone System climate."""
+
+    def __init__(
+        self,
+        coordinator: AirzoneUpdateCoordinator,
+        entry: ConfigEntry,
+        system_id: str,
+        system_data: dict[str, Any],
+    ) -> None:
+        """Initialize Airzone System climate entity."""
+        super().__init__(coordinator, entry, system_data)
+
+        self._attr_name = f"System {system_id}"
+        self._attr_unique_id = f"{self._attr_unique_id}_{system_id}"
+        self._attr_supported_features = 0
+        self._attr_temperature_unit = TEMP_CELSIUS
+        self._attr_hvac_modes = [
+            HVAC_MODE_LIB_TO_HASS[mode] for mode in self.get_airzone_value(AZD_MODES)
+        ]
+        self._async_update_attrs()
+
+    async def _async_update_hvac_params(self, params: dict[str, Any]) -> None:
+        """Send HVAC parameters to API."""
+        _params = {
+            API_SYSTEM_ID: self.system_id,
+            API_ZONE_ID: 0,
+            **params,
+        }
+        _LOGGER.debug("update_hvac_params=%s", _params)
+        try:
+            await self.coordinator.airzone.set_hvac_parameters(_params)
+        except AirzoneError as error:
+            raise HomeAssistantError(
+                f"Failed to set zone {self.name}: {error}"
+            ) from error
+        else:
+            self.coordinator.async_set_updated_data(self.coordinator.airzone.data())
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set hvac mode."""
+        params = {}
+        mode = HVAC_MODE_HASS_TO_LIB[hvac_mode]
+        if mode != self.get_airzone_value(AZD_MODE):
+            params[API_MODE] = mode
+            await self._async_update_hvac_params(params)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Update attributes when the coordinator updates."""
+        self._async_update_attrs()
+        super()._handle_coordinator_update()
+
+    @callback
+    def _async_update_attrs(self) -> None:
+        """Update climate attributes."""
+        mode = self.get_airzone_value(AZD_MODE)
+        self._attr_hvac_mode = HVAC_MODE_LIB_TO_HASS[mode]
+        self._attr_hvac_action = HVAC_ACTION_LIB_TO_HASS[mode]
+
+
+class AirzoneZoneClimate(AirzoneZoneEntity, ClimateEntity):
+    """Define an Airzone Zone climate."""
 
     def __init__(
         self,
@@ -97,7 +170,7 @@ class AirzoneClimate(AirzoneZoneEntity, ClimateEntity):
         system_zone_id: str,
         zone_data: dict,
     ) -> None:
-        """Initialize Airzone climate entity."""
+        """Initialize Airzone Zone climate entity."""
         super().__init__(coordinator, entry, system_zone_id, zone_data)
 
         self._attr_name = f"{zone_data[AZD_NAME]}"
