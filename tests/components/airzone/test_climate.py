@@ -71,6 +71,17 @@ async def test_airzone_create_climates(hass: HomeAssistant) -> None:
 
     await async_init_integration(hass)
 
+    state = hass.states.get("climate.system_1")
+    assert state.state == HVACMode.HEAT
+    assert state.attributes.get(ATTR_HVAC_ACTION) == HVACAction.HEATING
+    assert state.attributes.get(ATTR_HVAC_MODES) == [
+        HVACMode.OFF,
+        HVACMode.FAN_ONLY,
+        HVACMode.COOL,
+        HVACMode.HEAT,
+        HVACMode.DRY,
+    ]
+
     state = hass.states.get("climate.despacho")
     assert state.state == HVACMode.OFF
     assert state.attributes.get(ATTR_CURRENT_HUMIDITY) == 36

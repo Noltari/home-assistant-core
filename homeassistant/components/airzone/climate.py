@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from typing import Any, Final
 
 from aioairzone.common import OperationAction, OperationMode
@@ -23,6 +24,7 @@ from aioairzone.const import (
     AZD_ON,
     AZD_SPEED,
     AZD_SPEEDS,
+    AZD_SYSTEMS,
     AZD_TEMP,
     AZD_TEMP_MAX,
     AZD_TEMP_MIN,
@@ -53,7 +55,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import AirzoneConfigEntry
 from .const import API_TEMPERATURE_STEP, TEMP_UNIT_LIB_TO_HASS
 from .coordinator import AirzoneUpdateCoordinator
-from .entity import AirzoneZoneEntity
+from .entity import AirzoneEntity, AirzoneSystemEntity, AirzoneZoneEntity
 
 BASE_FAN_SPEEDS: Final[dict[int, str]] = {
     0: FAN_AUTO,
@@ -116,7 +118,7 @@ async def async_setup_entry(
         new_zones = received_zones - added_zones
         if new_zones:
             async_add_entities(
-                AirzoneClimate(
+                AirzoneZoneClimate(
                     coordinator,
                     entry,
                     system_zone_id,
@@ -126,12 +128,76 @@ async def async_setup_entry(
             )
             added_zones.update(new_zones)
 
+    entities: list[AirzoneClimate] = []
+
+    entities.extend(
+        AirzoneSystemClimate(
+            coordinator,
+            entry,
+            system_id,
+            system_data,
+        )
+        for system_id, system_data in coordinator.data[AZD_SYSTEMS].items()
+    )
+
+    async_add_entities(entities)
+
     entry.async_on_unload(coordinator.async_add_listener(_async_entity_listener))
     _async_entity_listener()
 
 
-class AirzoneClimate(AirzoneZoneEntity, ClimateEntity):
+class AirzoneClimate(AirzoneEntity, ClimateEntity):
     """Define an Airzone sensor."""
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Update attributes when the coordinator updates."""
+        self._async_update_attrs()
+        super()._handle_coordinator_update()
+
+    @abstractmethod
+    def _async_update_attrs(self) -> None:
+        """Update climate attributes."""
+
+
+class AirzoneSystemClimate(AirzoneSystemEntity, AirzoneClimate):
+    """Define an Airzone System climate."""
+
+    def __init__(
+        self,
+        coordinator: AirzoneUpdateCoordinator,
+        entry: ConfigEntry,
+        system_id: str,
+        system_data: dict[str, Any],
+    ) -> None:
+        """Initialize Airzone System climate entity."""
+        super().__init__(coordinator, entry, system_data)
+
+        self._attr_name = f"System {system_id}"
+        self._attr_unique_id = f"{self._attr_unique_id}_{system_id}"
+        self._attr_hvac_modes = [
+            HVAC_MODE_LIB_TO_HASS[mode] for mode in self.get_airzone_value(AZD_MODES)
+        ]
+        self._async_update_attrs()
+
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        """Set hvac mode."""
+        params = {}
+        mode = HVAC_MODE_HASS_TO_LIB[hvac_mode]
+        if mode != self.get_airzone_value(AZD_MODE):
+            params[API_MODE] = mode
+            await self._async_update_hvac_params(params)
+
+    @callback
+    def _async_update_attrs(self) -> None:
+        """Update climate attributes."""
+        mode = self.get_airzone_value(AZD_MODE)
+        self._attr_hvac_mode = HVAC_MODE_LIB_TO_HASS[mode]
+        self._attr_hvac_action = HVAC_ACTION_LIB_TO_HASS[mode]
+
+
+class AirzoneZoneClimate(AirzoneZoneEntity, AirzoneClimate):
+    """Define an Airzone Zone climate."""
 
     _attr_name = None
     _speeds: dict[int, str] = {}
@@ -145,7 +211,7 @@ class AirzoneClimate(AirzoneZoneEntity, ClimateEntity):
         system_zone_id: str,
         zone_data: dict,
     ) -> None:
-        """Initialize Airzone climate entity."""
+        """Initialize Airzone Zone climate entity."""
         super().__init__(coordinator, entry, system_zone_id, zone_data)
 
         self._attr_unique_id = f"{self._attr_unique_id}_{system_zone_id}"
@@ -250,12 +316,6 @@ class AirzoneClimate(AirzoneZoneEntity, ClimateEntity):
 
         if ATTR_HVAC_MODE in kwargs:
             await self.async_set_hvac_mode(kwargs[ATTR_HVAC_MODE])
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Update attributes when the coordinator updates."""
-        self._async_update_attrs()
-        super()._handle_coordinator_update()
 
     @callback
     def _async_update_attrs(self) -> None:
