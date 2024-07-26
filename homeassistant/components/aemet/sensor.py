@@ -51,7 +51,7 @@ from homeassistant.const import (
     UnitOfTemperature,
     UnitOfVolumetricFlux,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
@@ -95,7 +95,7 @@ from .entity import AemetEntity
 class AemetSensorEntityDescription(SensorEntityDescription):
     """A class that describes AEMET OpenData sensor entities."""
 
-    keys: list[str] | None = None
+    keys: list[str]
     value_fn: Callable[[str], datetime | float | int | str | None] = lambda value: value
 
 
@@ -396,8 +396,16 @@ class AemetSensor(AemetEntity, SensorEntity):
         self.entity_description = description
         self._attr_unique_id = f"{unique_id}-{description.key}"
 
-    @property
-    def native_value(self):
-        """Return the state of the device."""
+        self._async_update_attrs()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Update attributes when the coordinator updates."""
+        self._async_update_attrs()
+        super()._handle_coordinator_update()
+
+    @callback
+    def _async_update_attrs(self) -> None:
+        """Update sensor attributes."""
         value = self.get_aemet_value(self.entity_description.keys)
-        return self.entity_description.value_fn(value)
+        self._attr_native_value = self.entity_description.value_fn(value)
