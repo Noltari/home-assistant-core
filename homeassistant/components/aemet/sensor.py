@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Final
+import logging
+from typing import Any, Final
 
 from aemet_opendata.const import (
     AOD_CONDITION,
@@ -90,6 +91,8 @@ from .const import (
 from .coordinator import WeatherUpdateCoordinator
 from .entity import AemetEntity
 
+_LOGGER = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True, kw_only=True)
 class AemetSensorEntityDescription(SensorEntityDescription):
@@ -97,6 +100,16 @@ class AemetSensorEntityDescription(SensorEntityDescription):
 
     keys: list[str] | None = None
     value_fn: Callable[[str], datetime | float | int | str | None] = lambda value: value
+
+
+def aemet_parse_datetime(dt_str: str) -> Any:
+    """Parse AEMET datetime."""
+    aemet_dt = None
+    try:
+        aemet_dt = dt_util.parse_datetime(dt_str)
+    except TypeError:
+        _LOGGER.error("aemet_parse_datetime: %s", dt_str)
+    return aemet_dt
 
 
 FORECAST_SENSORS: Final[tuple[AemetSensorEntityDescription, ...]] = (
@@ -171,7 +184,7 @@ FORECAST_SENSORS: Final[tuple[AemetSensorEntityDescription, ...]] = (
         keys=[AOD_TOWN, AOD_FORECAST_DAILY, AOD_FORECAST_CURRENT, AOD_TIMESTAMP_UTC],
         name="Daily forecast time",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=dt_util.parse_datetime,
+        value_fn=aemet_parse_datetime,
     ),
     AemetSensorEntityDescription(
         entity_registry_enabled_default=False,
@@ -179,7 +192,7 @@ FORECAST_SENSORS: Final[tuple[AemetSensorEntityDescription, ...]] = (
         keys=[AOD_TOWN, AOD_FORECAST_HOURLY, AOD_FORECAST_CURRENT, AOD_TIMESTAMP_UTC],
         name="Hourly forecast time",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=dt_util.parse_datetime,
+        value_fn=aemet_parse_datetime,
     ),
     AemetSensorEntityDescription(
         key=f"forecast-daily-{ATTR_API_FORECAST_WIND_BEARING}",
@@ -286,7 +299,7 @@ WEATHER_SENSORS: Final[tuple[AemetSensorEntityDescription, ...]] = (
         keys=[AOD_STATION, AOD_TIMESTAMP_UTC],
         name="Station timestamp",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=dt_util.parse_datetime,
+        value_fn=aemet_parse_datetime,
     ),
     AemetSensorEntityDescription(
         key=ATTR_API_STORM_PROB,
@@ -326,7 +339,7 @@ WEATHER_SENSORS: Final[tuple[AemetSensorEntityDescription, ...]] = (
         keys=[AOD_TOWN, AOD_FORECAST_HOURLY, AOD_TIMESTAMP_UTC],
         name="Town timestamp",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=dt_util.parse_datetime,
+        value_fn=aemet_parse_datetime,
     ),
     AemetSensorEntityDescription(
         key=ATTR_API_WIND_BEARING,
