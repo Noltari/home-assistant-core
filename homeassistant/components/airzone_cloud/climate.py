@@ -18,7 +18,6 @@ from aioairzone_cloud.const import (
     API_VALUE,
     AZD_ACTION,
     AZD_AIDOOS,
-    AZD_DOUBLE_SET_POINT,
     AZD_GROUPS,
     AZD_HUMIDITY,
     AZD_INSTALLATIONS,
@@ -189,7 +188,7 @@ class AirzoneClimate(AirzoneEntity, ClimateEntity):
         if HVACMode.OFF not in self._attr_hvac_modes:
             self._attr_hvac_modes += [HVACMode.OFF]
 
-        if self.get_airzone_value(AZD_DOUBLE_SET_POINT):
+        if HVACMode.HEAT_COOL in self._attr_hvac_modes:
             self._attr_supported_features |= (
                 ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
             )
@@ -224,10 +223,7 @@ class AirzoneClimate(AirzoneEntity, ClimateEntity):
             self._attr_hvac_mode = HVACMode.OFF
         self._attr_max_temp = self.get_airzone_value(AZD_TEMP_SET_MAX)
         self._attr_min_temp = self.get_airzone_value(AZD_TEMP_SET_MIN)
-        if (
-            self.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-            and self._attr_hvac_mode == HVACMode.HEAT_COOL
-        ):
+        if self._attr_hvac_mode == HVACMode.HEAT_COOL:
             self._attr_target_temperature_high = self.get_airzone_value(
                 AZD_TEMP_SET_COOL_AIR
             )
